@@ -106,6 +106,7 @@ async function createTransaction(req,res){
 
     /**
      * 5. Create transaction (PENDING)
+     * 6. Create DEBIT ledger entry
      */
 
     const session = await mongoose.startSession()
@@ -119,6 +120,13 @@ async function createTransaction(req,res){
         status: "PENDING"
     },{ session })
 
+
+    const debitLedgerEntry = await ledgerModel.create({
+        account: fromAccount,
+        amount: amount,
+        transaction: transaction._id,
+        type: "DEBIT"
+    },{ session })
     
 
 }
