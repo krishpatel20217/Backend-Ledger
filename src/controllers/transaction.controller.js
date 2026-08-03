@@ -108,6 +108,7 @@ async function createTransaction(req,res){
      * 5. Create transaction (PENDING)
      * 6. Create DEBIT ledger entry
      * 7. Create CREDIT ledger entry
+     * 8. Mark transaction COMPLETED
      */
 
     const session = await mongoose.startSession()
@@ -136,6 +137,9 @@ async function createTransaction(req,res){
         transaction: transaction.id,
         type: "CREDIT"
     },{ session })
+
+    transaction.status = "COMPLETED"
+    await transaction.save({session})
     
 
 }
