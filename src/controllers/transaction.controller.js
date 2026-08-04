@@ -216,6 +216,9 @@ async function createInitialFundsTransaction(req,res){
         type: "CREDIT"
     },{ session })
 
+    transaction.status = "COMPLETED"
+    await transaction.save({ session })
+
 
 }
 
