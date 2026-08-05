@@ -111,40 +111,49 @@ async function createTransaction(req,res){
      * 8. Mark transaction COMPLETED
      * 9. Commit MongoDB session
      */
+    let transaction;
+    try{
+        const session = await mongoose.startSession()
+        session.startTransaction()
 
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    const transaction = new transactionModel({
-        fromAccount,
-        toAccount,
-        amount,
-        idempotencyKey,
-        status: "PENDING"
-    })
-
-
-    const debitLedgerEntry = await ledgerModel.create([{
-        account: fromAccount,
-        amount: amount,
-        transaction: transaction._id,
-        type: "DEBIT"
-    }],{ session })
+        transaction = (await transactionModel.create([{
+            fromAccount,
+            toAccount,
+            amount,
+            idempotencyKey,
+            status: "PENDING"
+        }],{ session }))[0]
 
 
-    const creditLedgerEntry = await ledgerModel.create([{
-        account: toAccount,
-        amount: amount,
-        transaction: transaction.id,
-        type: "CREDIT"
-    }],{ session })
+        const debitLedgerEntry = await ledgerModel.create([{
+            account: fromAccount,
+            amount: amount,
+            transaction: transaction._id,
+            type: "DEBIT"
+        }],{ session })
 
-    transaction.status = "COMPLETED"
-    await transaction.save({session})
 
-    await session.commitTransaction()
-    session.endSession()
+        const creditLedgerEntry = await ledgerModel.create([{
+            account: toAccount,
+            amount: amount,
+            transaction: transaction.id,
+            type: "CREDIT"
+        }],{ session })
 
+
+        await transactionModel.findOneAndUpdate(
+            {_id: transaction._id},
+            {status: "COMPLETE" },
+            {session}
+        )
+
+        await session.commitTransaction()
+        session.endSession()
+    }catch(error){
+        return res.status(400).json({
+            message:"Transaction is pending due to some issue please try again after some time"
+        })
+    }
     /**
      * 10. Send email notification
      */
