@@ -23,7 +23,7 @@ router.post("/",authMiddleware.authMiddleware,accountController.createAccountCon
 router.get("/",authMiddleware.authMiddleware,accountController.getUserAccountsController)
 
 /**
- * - GET /api/accounts/:accountId
+ * - GET /api/balance/:accountId
  */
 router.get("/balance/:accountId",authMiddleware.authMiddleware,accountController.getAccountBalanceController)
 

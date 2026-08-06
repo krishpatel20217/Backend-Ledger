@@ -1,4 +1,7 @@
 const accountModel = require("../models/account.model");
+const catchAsync = require('../utils/catchAsync')
+
+
 
 
 async function createAccountController(req,res) {
@@ -45,7 +48,7 @@ async function getAccountBalanceController(req,res){
 }
 
 module.exports = {
-    createAccountController,
-    getUserAccountsController,
-    getAccountBalanceController
+    createAccountController: catchAsync(createAccountController),
+    getUserAccountsController: catchAsync(getUserAccountsController),
+    getAccountBalanceController: catchAsync(getAccountBalanceController)
 }

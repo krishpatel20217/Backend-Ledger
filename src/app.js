@@ -22,4 +22,10 @@ app.use("/api/auth",authRouter)
 app.use("/api/accounts",accountRouter)
 app.use("/api/transaction",transactionRouter)
 
+
+app.use((err, req, res, next) => {
+    console.error(err)
+    res.status(500).json({ message: "Something went wrong" })
+})
+
 module.exports = app

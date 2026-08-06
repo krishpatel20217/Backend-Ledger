@@ -2,6 +2,7 @@ const transactionModel = require("../models/transaction.model")
 const ledgerModel = require("../models/ledger.model")
 const accountModel = require('../models/account.model')
 const emailService = require("../services/email.service")
+const catchAsync = require('../utils/catchAsync')
 const mongoose = require("mongoose")
 
 
@@ -299,6 +300,6 @@ async function createInitialFundsTransaction(req,res){
 }
 
 module.exports ={
-    createTransaction,
-    createInitialFundsTransaction
+    createTransaction: catchAsync(createTransaction),
+    createInitialFundsTransaction: catchAsync(createInitialFundsTransaction)
 }

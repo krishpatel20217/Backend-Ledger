@@ -2,6 +2,7 @@ const userModel = require("../models/user.model")
 const jwt = require('jsonwebtoken')
 const emailServices = require('../services/email.service')
 const tokenBlackListModel = require("../models/blackList.model")
+const catchAsync = require('../utils/catchAsync')
 /**
  * - user register controller
  * - POST /api/auth/register  
@@ -30,7 +31,7 @@ async function userRegisterController(req,res){
     res.cookie("token",token)
 
     res.status(201).json({
-        user:{
+        user: {
             _id:user._id,
             email:user.email,
             name:user.name
@@ -38,7 +39,11 @@ async function userRegisterController(req,res){
         token
     })
 
-    // await emailServices.sendRegistrationEmail(user.email,user.name)
+    try {
+        await emailServices.sendRegistrationEmail(user.email, user.name)
+    } catch (err) {
+        console.error("Registration email failed:", err)
+    }
 }
 
 /**
@@ -93,20 +98,20 @@ async function userLogoutController(req,res){
 
     
 
-    await tokenBlackListModel.create({
-        token:token
-    })
-
+    const isAlreadyBlacklisted = await tokenBlackListModel.findOne({ token })
+    if (!isAlreadyBlacklisted) {
+        await tokenBlackListModel.create({ token })
+    }
     res.clearCookie("token")
+    return res.status(200).json({
+         message: "User logged out successfully" 
+        })
 
-    res.status(200).json({
-        message:"User logged out successfully"
-    })
 
 }
 
 module.exports = {
-    userRegisterController,
-    userLoginController,
-    userLogoutController
+    userRegisterController: catchAsync(userRegisterController),
+    userLoginController: catchAsync(userLoginController),
+    userLogoutController: catchAsync(userLogoutController)
 }
