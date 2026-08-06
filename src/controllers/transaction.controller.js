@@ -47,6 +47,12 @@ async function createTransaction(req,res){
         })
     }
 
+    if(fromUserAccount._id.toString() === toUserAccount._id.toString()){
+        return res.status(400).json({
+            message:"fromAccount and toAccount cannot be same"
+        })
+    }
+
     /**
      * 2. Validate idempotency key
      */
@@ -88,7 +94,7 @@ async function createTransaction(req,res){
 
     if(fromUserAccount.status !== "ACTIVE" || toUserAccount.status !== "ACTIVE"){
         return res.status(400).json({
-            message : "Both fromAccount and toAccount must be ACTIVE to procees transaction"
+            message : "Both fromAccount and toAccount must be ACTIVE to process transaction"
         })
     }
 
@@ -112,8 +118,9 @@ async function createTransaction(req,res){
      * 9. Commit MongoDB session
      */
     let transaction;
+    let session;
     try{
-        const session = await mongoose.startSession()
+        session = await mongoose.startSession()
         session.startTransaction()
 
         transaction = (await transactionModel.create([{
@@ -136,20 +143,22 @@ async function createTransaction(req,res){
         const creditLedgerEntry = await ledgerModel.create([{
             account: toAccount,
             amount: amount,
-            transaction: transaction.id,
+            transaction: transaction._id,
             type: "CREDIT"
         }],{ session })
 
 
-        await transactionModel.findOneAndUpdate(
+        transaction = await transactionModel.findOneAndUpdate(
             {_id: transaction._id},
-            {status: "COMPLETE" },
-            {session}
+            {status: "COMPLETED"},
+            {session, new: true}
         )
 
         await session.commitTransaction()
         session.endSession()
     }catch(error){
+        await session.abortTransaction()
+        session.endSession()
         return res.status(400).json({
             message:"Transaction is pending due to some issue please try again after some time"
         })
@@ -158,7 +167,11 @@ async function createTransaction(req,res){
      * 10. Send email notification
      */
 
-    await emailService.sendTransactionEmail(req.user.email, req.user.name , amount ,toAccount)
+    try {
+        await emailService.sendTransactionEmail(req.user.email, req.user.name, amount, toAccount)
+    } catch (err) {
+        console.error("Email failed:", err)
+    }
 
     return res.status(201).json({
         message:"Transaction completed successfully",
@@ -168,6 +181,7 @@ async function createTransaction(req,res){
 
 }
 
+// Note: system account has no balance check — it mints funds by design
 async function createInitialFundsTransaction(req,res){
 
     const {toAccount,amount,idempotencyKey} = req.body
@@ -199,36 +213,83 @@ async function createInitialFundsTransaction(req,res){
         })
     }
 
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    const transaction = new transactionModel({
-        fromAccount: fromUserAccount._id,
-        toAccount,
-        amount,
-        idempotencyKey,
-        status:"PENDING"
+    const isTransactionAlreadyExists = await transactionModel.findOne({
+        idempotencyKey:idempotencyKey
     })
 
-    const debitLedgerEntry = await ledgerModel.create([{
-        account: fromUserAccount._id,
-        amount: amount,
-        transaction: transaction._id,
-        type: "DEBIT"
-    }],{ session })
+    if(isTransactionAlreadyExists){
+        if(isTransactionAlreadyExists.status ==="COMPLETED"){
+            return res.status(200).json({
+                message:"Transaction already processed",
+                transaction: isTransactionAlreadyExists
+            })
+        }
 
-    const creditLedgerEntry = await ledgerModel.create([{
-        account: toAccount,
-        amount: amount,
-        transaction: transaction.id,
-        type: "CREDIT"
-    }],{ session })
+        if(isTransactionAlreadyExists.status ==="PENDING"){
+            return res.status(200).json({
+                message:"Transaction is still processing"
+            })
+        }
 
-    transaction.status = "COMPLETED"
-    await transaction.save({ session })
+        if(isTransactionAlreadyExists.status ==="FAILED"){
+            return res.status(500).json({
+                message:"Transaction processing failed , please retry"
+            })
+        }
 
-    await session.commitTransaction()
-    session.endSession()
+        if(isTransactionAlreadyExists.status ==="REVERSED"){
+            return res.status(500).json({
+                message:"Transaction is reversed, please retry"
+            })
+        }
+    }
+
+    if(fromUserAccount.status !== "ACTIVE" || toUserAccount.status !== "ACTIVE"){
+        return res.status(400).json({
+            message : "Both fromAccount and toAccount must be ACTIVE to process transaction"
+        })
+    }
+
+    let transaction;
+    let session;
+    try {
+        session = await mongoose.startSession()
+        session.startTransaction()
+
+        transaction = new transactionModel({
+            fromAccount: fromUserAccount._id,
+            toAccount,
+            amount,
+            idempotencyKey,
+            status:"PENDING"
+        })
+
+        const debitLedgerEntry = await ledgerModel.create([{
+            account: fromUserAccount._id,
+            amount: amount,
+            transaction: transaction._id,
+            type: "DEBIT"
+        }],{ session })
+
+        const creditLedgerEntry = await ledgerModel.create([{
+            account: toAccount,
+            amount: amount,
+            transaction: transaction._id,
+            type: "CREDIT"
+        }],{ session })
+
+        transaction.status = "COMPLETED"
+        await transaction.save({ session })
+
+        await session.commitTransaction()
+        session.endSession()
+    } catch (error) {
+        await session.abortTransaction()
+        session.endSession()
+        return res.status(400).json({
+            message: "Initial funds transaction failed, please try again after some time"
+        })
+    }
 
     return res.status(201).json({
         message:"Initial funds transaction completed successfully",

@@ -15,6 +15,7 @@ transactionRoutes.post("/",authMiddleware.authMiddleware,transactionController.c
 /**
  * - POST /api/transaction/system/initial-funds
  * - Create initial funds transaction for system user
+ * -// Note: system account has no balance check — it mints funds by design
  */
 transactionRoutes.post("/system/initial-funds",authMiddleware.authSystemUserMiddleware,transactionController.createInitialFundsTransaction)
 
