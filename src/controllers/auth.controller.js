@@ -2,7 +2,21 @@ const userModel = require("../models/user.model")
 const jwt = require('jsonwebtoken')
 const emailServices = require('../services/email.service')
 const tokenBlackListModel = require("../models/blackList.model")
+const refreshTokenModel = require("../models/refreshToken.model")
 const catchAsync = require('../utils/catchAsync')
+const { generateAccessToken, generateRefreshToken } = require('../utils/token.util')
+
+async function issueTokens(res, userId) {
+    const accessToken = generateAccessToken(userId)
+    const refreshToken = generateRefreshToken(userId)
+
+    await refreshTokenModel.create({ user: userId, token: refreshToken })
+
+    res.cookie("token", accessToken, { httpOnly: true, maxAge: 15 * 60 * 1000 })
+    res.cookie("refreshToken", refreshToken, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 })
+
+    return accessToken
+}
 /**
  * - user register controller
  * - POST /api/auth/register  
@@ -26,9 +40,8 @@ async function userRegisterController(req,res){
         email,password,name
     })
 
-    const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{expiresIn:"3d"})
+    const token = await issueTokens(res, user._id)
 
-    res.cookie("token",token)
 
     res.status(201).json({
         user: {
@@ -68,9 +81,7 @@ async function userLoginController(req,res) {
     })
  }
 
- const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{expiresIn:"3d"})
-
-    res.cookie("token",token)
+ const token = await issueTokens(res, user._id)
 
     res.status(200).json({
         user:{
@@ -83,12 +94,53 @@ async function userLoginController(req,res) {
 
 }
 
+
+/**
+ * -User Refresh Controller
+ * -POST /api/auth/refresh
+ */
+async function userRefreshController(req,res){
+    const incomingRefreshToken = req.cookies.refreshToken
+
+    if(!incomingRefreshToken){
+        return res.status(401).json({ message: "Refresh token is missing" })
+    }
+
+    const storedToken = await refreshTokenModel.findOne({ token: incomingRefreshToken })
+    if(!storedToken){
+        return res.status(401).json({ message: "Refresh token is invalid or expired" })
+    }
+
+    let decoded
+    try {
+        decoded = jwt.verify(incomingRefreshToken, process.env.JWT_REFRESH_SECRET)
+    } catch (err) {
+        await refreshTokenModel.deleteOne({ token: incomingRefreshToken })
+        return res.status(401).json({ message: "Refresh token is invalid or expired" })
+    }
+
+    // rotate: delete old, issue new
+    await refreshTokenModel.deleteOne({ token: incomingRefreshToken })
+    const newAccessToken = await issueTokens(res, decoded.userId)
+
+    return res.status(200).json({
+        message: "Token refreshed successfully",
+        token: newAccessToken
+    })
+}
+
 /**
  * -User Logout Controller
  * -POST /api/auth/logout
  */
 async function userLogoutController(req,res){
     const token = req.cookies.token || req.headers.authorization?.split(" ")[1]
+    const refreshToken = req.cookies.refreshToken
+
+    if(refreshToken){
+        await refreshTokenModel.deleteOne({ token: refreshToken })
+        res.clearCookie("refreshToken")
+    }
 
     if(!token){
         return res.status(200).json({
@@ -111,7 +163,8 @@ async function userLogoutController(req,res){
 }
 
 module.exports = {
-    userRegisterController: catchAsync(userRegisterController),
+        userRegisterController: catchAsync(userRegisterController),
     userLoginController: catchAsync(userLoginController),
+    userRefreshController: catchAsync(userRefreshController),
     userLogoutController: catchAsync(userLogoutController)
 }
