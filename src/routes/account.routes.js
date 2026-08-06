@@ -27,5 +27,11 @@ router.get("/",authMiddleware.authMiddleware,accountController.getUserAccountsCo
  */
 router.get("/balance/:accountId",authMiddleware.authMiddleware,accountController.getAccountBalanceController)
 
+/**
+ * - GET /api/accounts/:accountId/transactions
+ * - Get paginated transaction history for an account
+ * - Protected Route
+ */
+router.get("/:accountId/transactions", authMiddleware.authMiddleware, accountController.getAccountTransactionsController)
 
 module.exports = router;
